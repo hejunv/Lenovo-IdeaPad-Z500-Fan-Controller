@@ -124,13 +124,14 @@ VOID monitor()
     while (TRUE)
     {
         cpuTemperatureCopy = ec.readByte(CPU_TEMPERATURE_REGISTER);
+        //if (cpuTemperatureCopy > 110) { cpuTemperatureCopy = 1; }
         fanSpeedCopy = ec.readByte(FAN_SPEED_REGISTER) * fanSpeedMaxCoefficient;
         // Using previous values if read operation failed
         cpuTemperature = cpuTemperatureCopy ? cpuTemperatureCopy : cpuTemperature;
         fanSpeed = fanSpeedCopy ? fanSpeedCopy : fanSpeed;
 
-        std::cout << "FAN STATUS = " << (cpuTemperature >= temperature ? "\033[1;32mACTIVE " : "\033[1;31mPASSIVE") << "\033[0m" << std::endl
-                  << "FAN SPEED  = " << std::left << std::setw(4) << std::to_string((UINT8)fanSpeed > 100 ? 100 : (UINT8)fanSpeed) + "%" << std::endl
+        std::cout << "FAN STATUS = " << (cpuTemperature >= temperature && cpuTemperature < 110 ? "\033[1;32mACTIVE " : "\033[1;31mPASSIVE") << "\033[0m" << std::endl
+                  << "FAN SPEED  = " << std::left << std::setw(4) << std::to_string((UINT8)fanSpeed > 1000 ? 1000 : (UINT8)fanSpeed) + "%" << std::endl
                   << "CPU TEMP   = " << std::left << std::setw(4) << std::to_string((UINT8)cpuTemperature) + "c" << std::endl;
         Sleep(interval);
 
@@ -163,33 +164,38 @@ VOID monitor()
 VOID controller()
 {
     BOOL checkTemperature = driver && temperature;
+    BYTE cpuTemperature1;
     while (TRUE)
     {
-        if (!checkTemperature || (checkTemperature && ec.readByte(CPU_TEMPERATURE_REGISTER) >= temperature))
+        cpuTemperature1 = ec.readByte(CPU_TEMPERATURE_REGISTER);
+        if (10 < cpuTemperature1 && cpuTemperature1 < 110)
         {
-            cleanDust.run(TRUE);
+            if (!checkTemperature || (checkTemperature && cpuTemperature1 >= temperature))
+            {
+                cleanDust.run(TRUE);
 
-            if (driver)
-                for (UINT8 i = 0; i < CONTROLLER_RUNTIME; i++)
-                {
-                    Sleep(CONTROLLER_STEP);
-                    // Resetting the procedure when Dust Removal process suddenly stopped.
-                    if ((ec.readByte(FAN_DUST_CLEAN_OFF_REGISTER_1) == FAN_DUST_CLEAN_OFF_VALUE_1) &&
-                        (ec.readByte(FAN_DUST_CLEAN_OFF_REGISTER_2) == FAN_DUST_CLEAN_OFF_VALUE_2))
+                if (driver)
+                    for (UINT8 i = 0; i < CONTROLLER_RUNTIME; i++)
                     {
-                        ec.writeByte(FAN_DUST_CLEAN_OFF_REGISTER_1, FAN_DUST_CLEAN_ON_VALUE_1);
-                        ec.writeByte(FAN_DUST_CLEAN_OFF_REGISTER_2, FAN_DUST_CLEAN_ON_VALUE_2);
                         Sleep(CONTROLLER_STEP);
-                        break;
+                        // Resetting the procedure when Dust Removal process suddenly stopped.
+                        if ((ec.readByte(FAN_DUST_CLEAN_OFF_REGISTER_1) == FAN_DUST_CLEAN_OFF_VALUE_1) &&
+                            (ec.readByte(FAN_DUST_CLEAN_OFF_REGISTER_2) == FAN_DUST_CLEAN_OFF_VALUE_2))
+                        {
+                            ec.writeByte(FAN_DUST_CLEAN_OFF_REGISTER_1, FAN_DUST_CLEAN_ON_VALUE_1);
+                            ec.writeByte(FAN_DUST_CLEAN_OFF_REGISTER_2, FAN_DUST_CLEAN_ON_VALUE_2);
+                            Sleep(CONTROLLER_STEP);
+                            break;
+                        }
                     }
-                }
-            else
-                Sleep(CONTROLLER_RUNTIME * 1000);
+                else
+                    Sleep(CONTROLLER_RUNTIME * 1000);
 
-            cleanDust.run(FALSE);
+                cleanDust.run(FALSE);
+            }
+
+            Sleep(CONTROLLER_STEP);
         }
-
-        Sleep(CONTROLLER_STEP);
     }
 }
 
